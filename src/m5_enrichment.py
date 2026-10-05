@@ -249,21 +249,35 @@ def enrich_chunks(
     methods: list[str] | None = None,
 ) -> list[EnrichedChunk]:
     """
-    Chạy enrichment pipeline trên danh sách chunks. (Đã implement sẵn — dùng functions ở trên)
-
-    Có 2 chế độ:
-    - methods cụ thể (["summary"], ["contextual"]...): gọi từng function riêng (tốt cho học/debug)
-    - methods=["combined"] hoặc None: 1 API call duy nhất cho tất cả (tốt cho production)
-
-    Args:
-        chunks: List of {"text": str, "metadata": dict}
-        methods: Default None → combined mode (1 call/chunk).
-                 Options: "summary", "hyqa", "contextual", "metadata", "combined"
+    Chạy enrichment pipeline trên danh sách chunks.
+    Có tích hợp caching tự động để tiết kiệm chi phí và thời gian gọi API.
     """
     if methods is None:
         methods = ["combined"]
 
     use_combined = "combined" in methods
+    cache_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "reports", "enrichment_cache.json")
+
+    # Nạp từ cache nếu tồn tại
+    if use_combined and os.path.exists(cache_path) and len(chunks) > 5:
+        try:
+            with open(cache_path, "r", encoding="utf-8") as f:
+                cached_data = json.load(f)
+            if len(cached_data) == len(chunks):
+                print(f"  ⚡ Đã nạp thành công {len(cached_data)} chunks từ cache ({cache_path})!", flush=True)
+                return [
+                    EnrichedChunk(
+                        original_text=item["original_text"],
+                        enriched_text=item["enriched_text"],
+                        summary=item.get("summary", ""),
+                        hypothesis_questions=item.get("hypothesis_questions", []),
+                        auto_metadata=item.get("auto_metadata", {}),
+                        method=item.get("method", "combined"),
+                    )
+                    for item in cached_data
+                ]
+        except Exception as e:
+            print(f"  ⚠️  Không thể đọc cache: {e}, tiến hành chạy API...", flush=True)
 
     enriched = []
     for i, chunk in enumerate(chunks):
@@ -294,6 +308,26 @@ def enrich_chunks(
 
         if (i + 1) % 10 == 0 or (i + 1) == len(chunks):
             print(f"  Enriched {i + 1}/{len(chunks)} chunks...", flush=True)
+
+    # Lưu kết quả vào cache để sử dụng lại
+    if use_combined and len(enriched) > 5:
+        try:
+            os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+            serializable = [
+                {
+                    "original_text": c.original_text,
+                    "enriched_text": c.enriched_text,
+                    "summary": c.summary,
+                    "hypothesis_questions": c.hypothesis_questions,
+                    "auto_metadata": c.auto_metadata,
+                    "method": c.method,
+                }
+                for c in enriched
+            ]
+            with open(cache_path, "w", encoding="utf-8") as f:
+                json.dump(serializable, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
 
     return enriched
 

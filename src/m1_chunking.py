@@ -164,10 +164,14 @@ def chunk_hierarchical(text: str, parent_size: int = HIERARCHICAL_PARENT_SIZE,
     parents: list[Chunk] = []
     children: list[Chunk] = []
 
+    # Tiền tố duy nhất theo từng tài liệu để tránh trùng lặp giữa các files
+    src = metadata.get("source", "")
+    prefix = f"{src}_" if src else ""
+
     current_parent_text = ""
     for para in paragraphs:
         if current_parent_text and len(current_parent_text) + len(para) + 2 > parent_size:
-            pid = f"parent_{len(parents)}"
+            pid = f"{prefix}parent_{len(parents)}"
             parents.append(Chunk(
                 text=current_parent_text.strip(),
                 metadata={**metadata, "chunk_type": "parent", "parent_id": pid, "chunk_index": len(parents)},
@@ -177,7 +181,7 @@ def chunk_hierarchical(text: str, parent_size: int = HIERARCHICAL_PARENT_SIZE,
         current_parent_text = (current_parent_text + "\n\n" + para).strip() if current_parent_text else para
 
     if current_parent_text.strip():
-        pid = f"parent_{len(parents)}"
+        pid = f"{prefix}parent_{len(parents)}"
         parents.append(Chunk(
             text=current_parent_text.strip(),
             metadata={**metadata, "chunk_type": "parent", "parent_id": pid, "chunk_index": len(parents)},
